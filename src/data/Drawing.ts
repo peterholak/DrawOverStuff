@@ -1,4 +1,4 @@
-import { combineLatest, map, Observable, Subject } from "rxjs"
+import { map, merge, Observable, Subject } from "rxjs"
 import { PenUpDown } from "../dom/Canvas"
 
 export type Point = [number, number]
@@ -21,10 +21,10 @@ export default class Drawing {
 
     readonly clears = new Subject<void>()
 
-    readonly strokeCount = combineLatest([this.clears, this.strokeEnd]).pipe(
+    readonly strokeCount = merge(this.clears, this.strokeEnd).pipe(
         map(() => this.strokes.length)
     )
-    readonly pointCount = combineLatest([this.clears, this.strokeEnd]).pipe(
+    readonly pointCount = merge(this.clears, this.strokeEnd).pipe(
         map(() => this.strokes.reduce((acc, s) => acc + s.points.length, 0))
     )
 

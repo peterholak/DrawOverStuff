@@ -6,17 +6,39 @@ export type PenUpDown = {
     point: Point
 }
 
+type KeysOfTOnly<T, U> = {
+    [P in keyof T]-?: T[P] extends U ? P : never
+}[keyof T]
+type PointerEventList = KeysOfTOnly<GlobalEventHandlersEventMap, PointerEvent>
+
+export type CanvasRawEvent = { eventName: PointerEventList, event: PointerEvent }
+
 export default class Canvas {
     canvas: HTMLCanvasElement
     readonly penDown = new BehaviorSubject<PenUpDown>({ isDown: false, point: [0, 0] })
     readonly movements = new Subject<Point>()
     readonly size = new ReplaySubject<{ width: number, height: number }>(1)
 
+    static rawEventList: ReadonlyArray<PointerEventList> = [
+        'gotpointercapture',
+        'lostpointercapture',
+        'pointercancel',
+        'pointerdown',
+        'pointerenter',
+        'pointerleave',
+        'pointermove',
+        'pointerout',
+        'pointerover',
+        'pointerup'
+    ]
+    readonly rawEvents = new Subject<CanvasRawEvent>()
+
     constructor() {
         this.canvas = document.createElement('canvas')
         this.canvas.style.flex = '1'
         this.#attachResizeHandlers()
         this.#attachPointerHandlers()
+        this.#attachRawEvents()
     }
 
     #attachResizeHandlers() {
@@ -35,6 +57,12 @@ export default class Canvas {
         this.canvas.addEventListener('pointerdown', this.#onPointerDown.bind(this))
         this.canvas.addEventListener('pointerup', this.#onPointerUp.bind(this))
         this.canvas.addEventListener('pointerleave', this.#onPointerUp.bind(this))
+    }
+
+    #attachRawEvents() {
+        Canvas.rawEventList.forEach(eventName => 
+            this.canvas.addEventListener(eventName, e => this.rawEvents.next({ eventName, event: e }))
+        )
     }
 
     #onPointerMove(e: PointerEvent) {
