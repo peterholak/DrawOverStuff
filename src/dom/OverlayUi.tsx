@@ -4,6 +4,7 @@ import { useEffect, useReducer, useState } from 'preact/hooks'
 import { CanvasRawEvent } from "./Canvas"
 import { merge, Observable } from "rxjs"
 import { KeyboardRawEvent } from "./KeyboardHandler"
+import Modes from "../data/Modes"
 
 export enum Corner { TopLeft, TopRight, BottomLeft, BottomRight }
 
@@ -14,6 +15,7 @@ export default class OverlayUi {
 
     constructor(
         drawing: Parameters<typeof Overlay>[0]["drawing"],
+        modes: Parameters<typeof Overlay>[0]["modes"],
         rawPointerEvents?: Observable<CanvasRawEvent>,
         rawKeyboardEvents?: Observable<KeyboardRawEvent>
     ) {
@@ -25,18 +27,22 @@ export default class OverlayUi {
         this.overlay.style.height = '100%'
         this.overlay.style.pointerEvents = 'none'
 
-        render(<Overlay drawing={drawing} rawPointerEvents={rawPointerEvents} rawKeyboardEvents={rawKeyboardEvents} />, this.overlay)
+        render(<Overlay drawing={drawing} modes={modes} rawPointerEvents={rawPointerEvents} rawKeyboardEvents={rawKeyboardEvents} />, this.overlay)
     }
 }
 
 function Overlay(props: {
-    drawing: Pick<Drawing, 'strokeCount'|'pointCount'|'clear'>,
+    drawing: Pick<Drawing, 'strokeCount'|'pointCount'|'lastStrokePoints'|'clear'>,
+    modes: Pick<Modes, 'eraseMode'|'panMode'>,
     rawPointerEvents?: Observable<CanvasRawEvent>,
     rawKeyboardEvents?: Observable<KeyboardRawEvent>,
     maxEventsOnScreen?: number
 }) {
     const [strokeCount, setStrokeCount] = useState(0)
     const [pointCount, setPointCount] = useState(0)
+    const [lastStrokePoints, setLastStrokePoints] = useState(0)
+    const [eraseMode, setEraseMode] = useState(false)
+    const [panMode, setPanMode] = useState(false)
     const [noMoves, setNoMoves] = useState(true)
     const [rawEvents, addRawEvent] = useReducer<(CanvasRawEvent|KeyboardRawEvent)[], CanvasRawEvent|KeyboardRawEvent>((acc, e) => {
         if (noMoves && e.eventName === 'pointermove') {
@@ -52,16 +58,29 @@ function Overlay(props: {
     useEffect(() => {
         const strokesSub = props.drawing.strokeCount.subscribe(setStrokeCount)
         const pointsSub = props.drawing.pointCount.subscribe(setPointCount)
+        const lastPointsSub = props.drawing.lastStrokePoints.subscribe(setLastStrokePoints)
+        const eraseSub = props.modes.eraseMode.subscribe(setEraseMode)
+        const panSub = props.modes.panMode.subscribe(setPanMode)
         const eventsSub = merge(...[props.rawPointerEvents, props.rawKeyboardEvents].filter(o => o !== undefined)).subscribe(addRawEvent)
         return () => {
             strokesSub.unsubscribe()
             pointsSub.unsubscribe()
+            lastPointsSub.unsubscribe()
+            eraseSub.unsubscribe()
+            panSub.unsubscribe()
             eventsSub.unsubscribe()
         }
     }, [])
 
     return <>
-        <StatusBox corner={Corner.BottomRight} strokeCount={strokeCount} pointCount={pointCount} />
+        <StatusBox
+            corner={Corner.BottomRight}
+            strokeCount={strokeCount}
+            pointCount={pointCount}
+            lastStrokePoints={lastStrokePoints}
+            eraseMode={eraseMode}
+            panMode={panMode}
+        />
         <ControlBox corner={Corner.TopLeft} onClear={() => props.drawing.clear()} />
         {props.rawPointerEvents !== undefined || props.rawKeyboardEvents !== undefined ?
             <EventLogBox corner={Corner.BottomLeft} events={rawEvents} noMovesRequested={setNoMoves} /> :
@@ -70,10 +89,20 @@ function Overlay(props: {
     </>
 }
 
-function StatusBox(props: { corner: Corner, strokeCount: number, pointCount: number }) {
+function StatusBox(props: {
+    corner: Corner,
+    strokeCount: number,
+    pointCount: number,
+    lastStrokePoints: number,
+    eraseMode: boolean,
+    panMode: boolean
+}) {
     return <div style={cornerStyle(props.corner)}>
         <div>Total strokes: {props.strokeCount}</div>
-        <div>Total points: {props.pointCount}</div> 
+        <div>Total points: {props.pointCount}</div>
+        <div>Last stroke points: {props.lastStrokePoints}</div>
+        <div>Erase mode: {props.eraseMode ? 'true' : 'false'}</div>
+        <div>Pan mode: {props.panMode ? 'true' : 'false'}</div>
     </div>
 }
 

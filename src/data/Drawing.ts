@@ -13,6 +13,8 @@ export class Stroke {
 
 export default class Drawing {
     strokes: Stroke[] = []
+    eraseStroke: Stroke|undefined
+    erasing = false
     isPenDown = false
 
     readonly strokeStart = new Subject<Readonly<Stroke>>()
@@ -21,19 +23,25 @@ export default class Drawing {
 
     readonly clears = new Subject<void>()
 
-    readonly strokeCount = merge(this.clears, this.strokeEnd).pipe(
+    readonly #strokeChanes = merge(this.clears, this.strokeEnd)
+    readonly strokeCount = this.#strokeChanes.pipe(
         map(() => this.strokes.length)
     )
-    readonly pointCount = merge(this.clears, this.strokeEnd).pipe(
+    readonly pointCount = this.#strokeChanes.pipe(
         map(() => this.strokes.reduce((acc, s) => acc + s.points.length, 0))
+    )
+    readonly lastStrokePoints = this.#strokeChanes.pipe(
+        map(() => this.strokes.length === 0 ? 0 : this.strokes[this.strokes.length - 1].points.length)
     )
 
     constructor(
         penDown: Observable<PenUpDown>,
-        movements: Observable<Point>
+        movements: Observable<Point>,
+        eraseMode: Observable<boolean>
     ) {
         penDown.subscribe(this.#penUpDown.bind(this))
         movements.subscribe(this.#movement.bind(this))
+        eraseMode.subscribe(e => this.erasing = e)
     }
 
     clear() {
@@ -47,7 +55,11 @@ export default class Drawing {
 
     #penUpDown(e: PenUpDown) {
         if (e.isDown) {
-            this.#nextStroke(e.point) // TODO
+            if (this.erasing) {
+                this.eraseStroke = { points: [ e.point ] }
+            } else {
+                this.#nextStroke(e.point) // TODO
+            }
         } else {
             const stroke = this.#currentStroke()
             if (stroke !== undefined) {
@@ -58,7 +70,7 @@ export default class Drawing {
     }
 
     #currentStroke() {
-        if (!this.isPenDown || this.strokes.length === undefined) {
+        if (!this.isPenDown || this.erasing || this.strokes.length === undefined) {
             return undefined
         }
 
@@ -72,12 +84,20 @@ export default class Drawing {
     }
 
     #movement(point: Point) {
+        if (this.erasing) {
+            return this.#erasingMovement(point)
+        }
+
         const stroke = this.#currentStroke()
         if (stroke === undefined) {
             return
         }
         stroke.points.push(point)
         this.strokePoint.next(point)
+    }
+
+    #erasingMovement(point: Point) {
+        // TODO: stroke erase
     }
 
 }
