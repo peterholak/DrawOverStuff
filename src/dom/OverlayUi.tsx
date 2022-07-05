@@ -1,5 +1,5 @@
 import Drawing from "../data/Drawing"
-import { render } from 'preact'
+import { JSX, render } from 'preact'
 import { useEffect, useReducer, useState } from 'preact/hooks'
 import { CanvasRawEvent } from "./Canvas"
 import { merge, Observable } from "rxjs"
@@ -17,7 +17,8 @@ export default class OverlayUi {
         drawing: Parameters<typeof Overlay>[0]["drawing"],
         modes: Parameters<typeof Overlay>[0]["modes"],
         rawPointerEvents?: Observable<CanvasRawEvent>,
-        rawKeyboardEvents?: Observable<KeyboardRawEvent>
+        rawKeyboardEvents?: Observable<KeyboardRawEvent>,
+        debugEvents?: Observable<string>
     ) {
         this.overlay = document.createElement('div')
         this.overlay.style.position = 'fixed'
@@ -27,7 +28,13 @@ export default class OverlayUi {
         this.overlay.style.height = '100%'
         this.overlay.style.pointerEvents = 'none'
 
-        render(<Overlay drawing={drawing} modes={modes} rawPointerEvents={rawPointerEvents} rawKeyboardEvents={rawKeyboardEvents} />, this.overlay)
+        render(<Overlay
+            drawing={drawing}
+            modes={modes}
+            rawPointerEvents={rawPointerEvents}
+            rawKeyboardEvents={rawKeyboardEvents}
+            debugEvents={debugEvents}
+            />, this.overlay)
     }
 }
 
@@ -36,6 +43,7 @@ function Overlay(props: {
     modes: Pick<Modes, 'eraseMode'|'panMode'>,
     rawPointerEvents?: Observable<CanvasRawEvent>,
     rawKeyboardEvents?: Observable<KeyboardRawEvent>,
+    debugEvents?: Observable<string>,
     maxEventsOnScreen?: number
 }) {
     const [strokeCount, setStrokeCount] = useState(0)
@@ -44,12 +52,14 @@ function Overlay(props: {
     const [eraseMode, setEraseMode] = useState(false)
     const [panMode, setPanMode] = useState(false)
     const [noMoves, setNoMoves] = useState(true)
-    const [rawEvents, addRawEvent] = useReducer<(CanvasRawEvent|KeyboardRawEvent)[], CanvasRawEvent|KeyboardRawEvent>((acc, e) => {
-        if (noMoves && e.eventName === 'pointermove') {
+    const [rawEvents, addRawEvent] = useReducer<Array<string|JSX.Element>, CanvasRawEvent|KeyboardRawEvent|string>((acc, e) => {
+        if (noMoves && typeof e !== 'string' && e.eventName === 'pointermove') {
             return acc
         }
 
-        const events = [...acc, e]
+        const formatted = (typeof e === 'string' ? e : formatRawEvent(e))
+
+        const events = [...acc, formatted]
         if (events.length > (props.maxEventsOnScreen ?? 10)) {
             events.shift()
         }
@@ -61,7 +71,7 @@ function Overlay(props: {
         const lastPointsSub = props.drawing.lastStrokePoints.subscribe(setLastStrokePoints)
         const eraseSub = props.modes.eraseMode.subscribe(setEraseMode)
         const panSub = props.modes.panMode.subscribe(setPanMode)
-        const eventsSub = merge(...[props.rawPointerEvents, props.rawKeyboardEvents].filter(o => o !== undefined)).subscribe(addRawEvent)
+        const eventsSub = merge(...[props.rawPointerEvents, props.rawKeyboardEvents, props.debugEvents].filter(o => o !== undefined)).subscribe(addRawEvent)
         return () => {
             strokesSub.unsubscribe()
             pointsSub.unsubscribe()
@@ -87,6 +97,19 @@ function Overlay(props: {
             undefined
         }
     </>
+
+    function formatRawEvent(e: CanvasRawEvent|KeyboardRawEvent) {
+        if (e.event instanceof PointerEvent) {
+            return <>
+                {e.eventName}: {Math.floor(e.event.x)}, {Math.floor(e.event.y)}{' '}
+                <strong>{e.event.button !== -1 ? e.event.button : ''}</strong>{' '}
+                <small>{e.event.pointerType} {e.event.pointerId}</small></>
+        } else if (e.event instanceof KeyboardEvent) {
+            return <>{e.eventName} <strong>{e.event.key}</strong> <small>{e.event.code}</small></>
+        } else {
+            return <>{e.eventName}: unsupported event</>
+        }
+    }
 }
 
 function StatusBox(props: {
@@ -112,21 +135,8 @@ function ControlBox(props: { corner: Corner, onClear?: () => void }) {
     </div>
 }
 
-function EventLogBox(props: { corner: Corner, events: Array<CanvasRawEvent|KeyboardRawEvent>, noMovesRequested: (noMoves: boolean) => void }) {
+function EventLogBox(props: { corner: Corner, events: Array<string|JSX.Element>, noMovesRequested: (noMoves: boolean) => void }) {
     const [noMoves, setNoMoves] = useState(true)
-
-    function formatEvent(e: CanvasRawEvent|KeyboardRawEvent) {
-        if (e.event instanceof PointerEvent) {
-            return <>
-                {e.eventName}: {Math.floor(e.event.x)}, {Math.floor(e.event.y)}{' '}
-                <strong>{e.event.button !== -1 ? e.event.button : ''}</strong>{' '}
-                <small>{e.event.pointerType} {e.event.pointerId}</small></>
-        } else if (e.event instanceof KeyboardEvent) {
-            return <>{e.eventName} <strong>{e.event.key}</strong> <small>{e.event.code}</small></>
-        } else {
-            return <>{e.eventName}: unsupported event</>
-        }
-    }
 
     const outputLines = [
         <div key="eventlog">
@@ -136,7 +146,7 @@ function EventLogBox(props: { corner: Corner, events: Array<CanvasRawEvent|Keybo
                 no moves
             </label>
         </div>,
-        ...props.events.map(formatEvent)
+        ...props.events
     ]
     if (props.corner === Corner.BottomLeft || props.corner === Corner.BottomRight) {
         outputLines.reverse()
