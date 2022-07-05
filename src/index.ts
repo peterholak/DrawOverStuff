@@ -1,14 +1,14 @@
 import Drawing from "./data/Drawing"
 import Modes from "./data/Modes"
-import Canvas from "./dom/Canvas"
+import CanvasDom from "./dom/CanvasDom"
 import CanvasPainter from "./dom/CanvasPainter"
 import KeyboardHandler from "./dom/KeyboardHandler"
-import OverlayUi, { Corner } from "./dom/OverlayUi"
+import OverlayUi from "./dom/OverlayUi"
 
 document.addEventListener('DOMContentLoaded', start)
 
 function start() {
-    const canvas = new Canvas()
+    const canvas = new CanvasDom()
     const keyboard = new KeyboardHandler()
     const modes = new Modes('hold', keyboard.keyDownChanges)
     const drawing = new Drawing(canvas.penDown, canvas.movements, modes.eraseMode)

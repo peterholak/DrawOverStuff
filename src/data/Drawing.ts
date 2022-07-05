@@ -1,5 +1,5 @@
 import { map, merge, Observable, Subject } from "rxjs"
-import { PenUpDown } from "../dom/Canvas"
+import { PenUpDown } from "../dom/CanvasDom"
 
 export type Point = [number, number]
 
@@ -49,7 +49,17 @@ export default class Drawing {
         penDown.subscribe(this.#penUpDown.bind(this))
         movements.subscribe(this.#movement.bind(this))
         // TODO: maybe keep the mode until pen up if it is already active?
-        eraseMode.subscribe(e => this.erasing = e)
+        eraseMode.subscribe(e => {
+            this.erasing = e
+            if (this.erasing === false && this.eraseStroke !== undefined && this.eraseStroke.points.length > 0) {
+                const lastPoint = this.eraseStroke.points[this.eraseStroke.points.length - 1]
+                this.eraseStrokeEnd.next(lastPoint)
+                this.eraseStroke = undefined
+                // Treat the pen as not being down if erase button is lifted in the middle of the erase stroke
+                // TODO: could maybe just start a new stroke immediately instead
+                this.isPenDown = false
+            }
+        })
     }
 
     clear() {
@@ -62,6 +72,7 @@ export default class Drawing {
     }
 
     #penUpDown(e: PenUpDown) {
+        // TODO: make all this code with all the state changes (including in mode switches) and shit nicer and readable in one place
         if (e.isDown) {
             if (this.erasing) {
                 this.eraseStroke = { points: [ e.point ] }
@@ -140,7 +151,7 @@ export default class Drawing {
                 const strokePt1 = s.points[i]
                 const strokePt2 = s.points[i + 1]
 
-                if (Drawing.lineIntersects(pt1, pt2, strokePt1, strokePt2)) {
+                if (lineIntersects(pt1, pt2, strokePt1, strokePt2)) {
                     strokesToDelete.push(s)
                     return
                 }
@@ -153,20 +164,20 @@ export default class Drawing {
             this.strokesErased.next()
         }
     }
+}
 
-    static lineIntersects(line1pt1: Point, line1pt2: Point, line2pt1: Point, line2pt2: Point) {
-        const length1x = line1pt2[0] - line1pt1[0]
-        const length1y = line1pt2[1] - line1pt1[1]
-        const length2x = line2pt2[0] - line2pt1[0]
-        const length2y = line2pt2[1] - line2pt1[1]
-        const denominator = (length1y * length2x) - (length1x * length2y)
+function lineIntersects(line1pt1: Point, line1pt2: Point, line2pt1: Point, line2pt2: Point) {
+    const length1x = line1pt2[0] - line1pt1[0]
+    const length1y = line1pt2[1] - line1pt1[1]
+    const length2x = line2pt2[0] - line2pt1[0]
+    const length2y = line2pt2[1] - line2pt1[1]
+    const denominator = (length1y * length2x) - (length1x * length2y)
 
-        if (denominator === 0) {
-            return false
-        }
-
-        const ratio1 = ((length2y * (line1pt1[0] - line2pt1[0])) - (length2x * (line1pt1[1] - line2pt1[1]))) / denominator
-        const ratio2 = ((length1x * (line2pt1[1] - line1pt1[1])) - (length1y * (line2pt1[0] - line1pt1[0]))) / denominator
-        return ratio2 >= 0 && ratio2 <= 1 && ratio1 >= 0 && ratio1 <= 1
+    if (denominator === 0) {
+        return false
     }
+
+    const ratio1 = ((length2y * (line1pt1[0] - line2pt1[0])) - (length2x * (line1pt1[1] - line2pt1[1]))) / denominator
+    const ratio2 = ((length1x * (line2pt1[1] - line1pt1[1])) - (length1y * (line2pt1[0] - line1pt1[0]))) / denominator
+    return ratio2 >= 0 && ratio2 <= 1 && ratio1 >= 0 && ratio1 <= 1
 }

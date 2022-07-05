@@ -1,7 +1,7 @@
 import Drawing from "../data/Drawing"
 import { JSX, render } from 'preact'
 import { useEffect, useReducer, useState } from 'preact/hooks'
-import { CanvasRawEvent } from "./Canvas"
+import { CanvasRawEvent } from "./CanvasDom"
 import { merge, Observable } from "rxjs"
 import { KeyboardRawEvent } from "./KeyboardHandler"
 import Modes from "../data/Modes"

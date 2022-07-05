@@ -13,7 +13,7 @@ type PointerEventList = KeysOfTOnly<GlobalEventHandlersEventMap, PointerEvent>
 
 export type CanvasRawEvent = { eventName: PointerEventList, event: PointerEvent }
 
-export default class Canvas {
+export default class CanvasDom {
     canvas: HTMLCanvasElement
     readonly penDown = new BehaviorSubject<PenUpDown>({ isDown: false, point: [0, 0] })
     readonly movements = new Subject<Point>()
@@ -60,7 +60,7 @@ export default class Canvas {
     }
 
     #attachRawEvents() {
-        Canvas.rawEventList.forEach(eventName => 
+        CanvasDom.rawEventList.forEach(eventName => 
             this.canvas.addEventListener(eventName, e => this.rawEvents.next({ eventName, event: e }))
         )
     }
