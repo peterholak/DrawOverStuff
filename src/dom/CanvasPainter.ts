@@ -1,9 +1,10 @@
 import { Observable } from "rxjs"
-import Drawing, { Point, Stroke } from "../data/Drawing"
+import Drawing, { CanvasPoint, canvasToModel, initialZoom, modelToCanvas, Point, Stroke, ZoomState } from "../data/Drawing"
 
 export default class CanvasPainter {
 
     #size = { width: 0, height: 0 }
+    #zoom: ZoomState = { ...initialZoom }
 
     constructor(
         private context: CanvasRenderingContext2D,
@@ -15,6 +16,7 @@ export default class CanvasPainter {
         this.#registerErase()
         this.#registerClear()
         this.#registerResize()
+        this.#registerZoom()
     }
 
     redraw(strokes: Stroke[] = this.drawing.strokes) {
@@ -26,11 +28,12 @@ export default class CanvasPainter {
                 return
             }
             this.context.beginPath()
-            s.points.forEach((pt, index) => {
+            s.points.forEach((modelPoint, index) => {
+                const pt = this.#toCanvas(modelPoint)
                 if (index === 0) {
-                    this.context.moveTo(pt[0], pt[1])
+                    this.#moveTo(pt)
                 } else {
-                    this.context.lineTo(pt[0], pt[1])
+                    this.#lineTo(pt)
                     // doing this after every point makes it look exactly like when
                     // dragging with a mouse, in the future this should use brushes and stuff though,
                     // not just plain canvas line
@@ -45,11 +48,11 @@ export default class CanvasPainter {
             this.context.beginPath()
             this.context.strokeStyle = '#000'
             this.context.lineWidth = 1
-            this.context.moveTo(s.points[0][0], s.points[0][1])
+            this.#moveTo(this.#toCanvas(s.points[0]))
         })
 
         this.drawing.strokePoint.subscribe(pt => {
-            this.context.lineTo(pt[0], pt[1])
+            this.#lineTo(this.#toCanvas(pt))
             this.context.stroke()
         })
 
@@ -61,11 +64,11 @@ export default class CanvasPainter {
     #registerEraseStrokeDrawing() {
         this.drawing.eraseStrokeStart.subscribe(pt => {
             this.context.beginPath()
-            this.context.moveTo(pt[0], pt[1])
+            this.#moveTo(this.#toCanvas(pt))
         })
 
         this.drawing.eraseStrokePoint.subscribe(pt => {
-            this.context.lineTo(pt[0], pt[1])
+            this.#lineTo(this.#toCanvas(pt))
             this.context.strokeStyle = '#eee'
             this.context.lineWidth = 1
             this.context.stroke()
@@ -99,5 +102,24 @@ export default class CanvasPainter {
         this.size.subscribe(() => {
             this.redraw()
         })
+    }
+
+    #registerZoom() {
+        this.drawing.zoomState.subscribe(z => {
+            this.#zoom = z
+            this.redraw()
+        })
+    }
+
+    #toCanvas(pt: Point): CanvasPoint {
+        return modelToCanvas(pt, this.#zoom)
+    }
+
+    #moveTo(pt: CanvasPoint) {
+        this.context.moveTo(pt[0], pt[1])
+    }
+
+    #lineTo(pt: CanvasPoint) {
+        this.context.lineTo(pt[0], pt[1])
     }
 }

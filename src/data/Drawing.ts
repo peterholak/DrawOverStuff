@@ -1,7 +1,22 @@
-import { map, merge, Observable, Subject } from "rxjs"
+import { BehaviorSubject, map, merge, Observable, Subject } from "rxjs"
 import { PenUpDown } from "../dom/CanvasDom"
+import { ZoomCommand } from "./Modes"
 
-export type Point = [number, number]
+/** X, Y points in the drawing, zoom-independent */
+export type Point = [number, number] & { _marker?: never }
+
+/** X, Y points as the Canvas DOM element sees them, unaware of the app's internal zoom */
+export type CanvasPoint = [number, number] & { _marker: 'Canvas' }
+
+export type ZoomState = {
+    /** 1 = 100% */
+    level: number
+
+    // TODO: should this be in Point or CanvasPoint?
+    /** offset from zooming such that top-left corner would be at [0, 0] */
+    offset: Point
+}
+export const initialZoom: Readonly<ZoomState> = { level: 1, offset: [0, 0] }
 
 export class Stroke {
     constructor(startPoint: Point) {
@@ -16,6 +31,7 @@ export default class Drawing {
     eraseStroke: Stroke|undefined
     erasing = false
     isPenDown = false
+    underPointer: CanvasPoint = [0, 0] as CanvasPoint
 
     readonly strokeStart = new Subject<Readonly<Stroke>>()
     readonly strokeEnd = new Subject<Readonly<Stroke>>()
@@ -28,38 +44,42 @@ export default class Drawing {
 
     readonly clears = new Subject<void>()
 
+    readonly zoomState = new BehaviorSubject<ZoomState>(initialZoom)
+
     readonly debugEvents = new Subject<string>()
 
-    readonly #strokeChanes = merge(this.clears, this.strokeEnd)
-    readonly strokeCount = this.#strokeChanes.pipe(
+    readonly #strokeChanges = merge(this.clears, this.strokeEnd, this.strokesErased)
+    readonly strokeCount = this.#strokeChanges.pipe(
         map(() => this.strokes.length)
     )
-    readonly pointCount = this.#strokeChanes.pipe(
+    readonly pointCount = this.#strokeChanges.pipe(
         map(() => this.strokes.reduce((acc, s) => acc + s.points.length, 0))
     )
-    readonly lastStrokePoints = this.#strokeChanes.pipe(
+    readonly lastStrokePoints = this.#strokeChanges.pipe(
         map(() => this.strokes.length === 0 ? 0 : this.strokes[this.strokes.length - 1].points.length)
     )
 
     constructor(
         penDown: Observable<PenUpDown>,
-        movements: Observable<Point>,
-        eraseMode: Observable<boolean>
+        movements: Observable<CanvasPoint>,
+        eraseMode: Observable<boolean>,
+        zoomCommand: Observable<ZoomCommand>
     ) {
         penDown.subscribe(this.#penUpDown.bind(this))
         movements.subscribe(this.#movement.bind(this))
         // TODO: maybe keep the mode until pen up if it is already active?
         eraseMode.subscribe(e => {
             this.erasing = e
-            if (this.erasing === false && this.eraseStroke !== undefined && this.eraseStroke.points.length > 0) {
-                const lastPoint = this.eraseStroke.points[this.eraseStroke.points.length - 1]
-                this.eraseStrokeEnd.next(lastPoint)
+            if (this.erasing === false && this.eraseStroke !== undefined) {
+                this.eraseStrokeEnd.next(this.#toModel(this.underPointer))
                 this.eraseStroke = undefined
                 // Treat the pen as not being down if erase button is lifted in the middle of the erase stroke
                 // TODO: could maybe just start a new stroke immediately instead
                 this.isPenDown = false
             }
         })
+
+        zoomCommand.subscribe(this.#zoomCommand.bind(this))
     }
 
     clear() {
@@ -72,17 +92,18 @@ export default class Drawing {
     }
 
     #penUpDown(e: PenUpDown) {
+        const point = this.#toModel(e.canvasPoint)
         // TODO: make all this code with all the state changes (including in mode switches) and shit nicer and readable in one place
         if (e.isDown) {
             if (this.erasing) {
-                this.eraseStroke = { points: [ e.point ] }
-                this.eraseStrokeStart.next(e.point)
+                this.eraseStroke = { points: [ point ] }
+                this.eraseStrokeStart.next(point)
             } else {
-                this.#nextStroke(e.point) // TODO
+                this.#nextStroke(point) // TODO
             }
         } else {
             if (this.erasing) {
-                this.eraseStrokeEnd.next(e.point)
+                this.eraseStrokeEnd.next(point)
                 this.eraseStroke = undefined
             } else {
                 const stroke = this.#currentStroke()
@@ -108,9 +129,11 @@ export default class Drawing {
         this.strokeStart.next(stroke)
     }
 
-    #movement(point: Point) {
+    #movement(canvasPoint: CanvasPoint) {
+        const point = this.#toModel(canvasPoint)
+        this.underPointer = canvasPoint
         if (this.erasing && this.isPenDown) {
-            return this.#erasingMovement(point)
+            return this.#erasingMovement(canvasPoint)
         }
 
         const stroke = this.#currentStroke()
@@ -121,7 +144,8 @@ export default class Drawing {
         this.strokePoint.next(point)
     }
 
-    #erasingMovement(point: Point) {
+    #erasingMovement(canvasPoint: CanvasPoint) {
+        const point = this.#toModel(canvasPoint)
         if (this.eraseStroke === undefined) {
             // erase key may have been pressed during an existing stroke
             // it will not be take into account in such a case
@@ -164,6 +188,25 @@ export default class Drawing {
             this.strokesErased.next()
         }
     }
+
+    #zoomCommand(command: ZoomCommand) {
+        const existing = this.zoomState.value
+        if (command === 'in') {
+            this.zoomState.next({ level: existing.level + 0.05, offset: existing.offset })
+        } else if (command === 'out') {
+            this.zoomState.next({ level: existing.level - 0.05, offset: existing.offset})
+        } else if (command === 'reset') {
+            this.zoomState.next(initialZoom)
+        }
+    }
+
+    #toCanvas(point: Point) {
+        return modelToCanvas(point, this.zoomState.value)
+    }
+
+    #toModel(canvasPoint: CanvasPoint) {
+        return canvasToModel(canvasPoint, this.zoomState.value)
+    }
 }
 
 function lineIntersects(line1pt1: Point, line1pt2: Point, line2pt1: Point, line2pt2: Point) {
@@ -180,4 +223,18 @@ function lineIntersects(line1pt1: Point, line1pt2: Point, line2pt1: Point, line2
     const ratio1 = ((length2y * (line1pt1[0] - line2pt1[0])) - (length2x * (line1pt1[1] - line2pt1[1]))) / denominator
     const ratio2 = ((length1x * (line2pt1[1] - line1pt1[1])) - (length1y * (line2pt1[0] - line1pt1[0]))) / denominator
     return ratio2 >= 0 && ratio2 <= 1 && ratio1 >= 0 && ratio1 <= 1
+}
+
+export function modelToCanvas(point: Point, zoom: ZoomState): CanvasPoint {
+    return [
+        zoom.offset[0] + point[0] * zoom.level,
+        zoom.offset[1] + point[1] * zoom.level
+    ] as CanvasPoint
+}
+
+export function canvasToModel(canvasPoint: CanvasPoint, zoom: ZoomState): Point {
+    return [
+        (canvasPoint[0] - zoom.offset[0]) / zoom.level,
+        (canvasPoint[1] - zoom.offset[1]) / zoom.level
+    ]
 }

@@ -1,9 +1,9 @@
 import { BehaviorSubject, ReplaySubject, Subject } from "rxjs"
-import { Point } from "../data/Drawing"
+import { CanvasPoint, Point } from "../data/Drawing"
 
 export type PenUpDown = {
     isDown: boolean
-    point: Point
+    canvasPoint: CanvasPoint
 }
 
 type KeysOfTOnly<T, U> = {
@@ -15,8 +15,8 @@ export type CanvasRawEvent = { eventName: PointerEventList, event: PointerEvent 
 
 export default class CanvasDom {
     canvas: HTMLCanvasElement
-    readonly penDown = new BehaviorSubject<PenUpDown>({ isDown: false, point: [0, 0] })
-    readonly movements = new Subject<Point>()
+    readonly penDown = new BehaviorSubject<PenUpDown>({ isDown: false, canvasPoint: [0, 0] as CanvasPoint })
+    readonly movements = new Subject<CanvasPoint>()
     readonly size = new ReplaySubject<{ width: number, height: number }>(1)
 
     static rawEventList: ReadonlyArray<PointerEventList> = [
@@ -73,14 +73,14 @@ export default class CanvasDom {
             this.canvas.style.cursor = 'default'
         }
 
-        this.movements.next([e.x, e.y])
+        this.movements.next([e.x, e.y] as CanvasPoint)
     }
 
     #onPointerDown(e: PointerEvent) {
-        this.penDown.next({ isDown: true, point: [e.x, e.y] })
+        this.penDown.next({ isDown: true, canvasPoint: [e.x, e.y] as CanvasPoint })
     }
 
     #onPointerUp(e: PointerEvent) {
-        this.penDown.next({ isDown: false, point: [e.x, e.y] })
+        this.penDown.next({ isDown: false, canvasPoint: [e.x, e.y] as CanvasPoint })
     }
 }
