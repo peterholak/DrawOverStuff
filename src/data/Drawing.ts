@@ -1,11 +1,15 @@
 import { BehaviorSubject, map, merge, Observable, Subject } from "rxjs"
 import { PenUpDown } from "../dom/CanvasDom"
-import { ZoomCommand } from "./Modes"
+import { PanCommand, ZoomCommand } from "./Modes"
 
-/** X, Y points in the drawing, zoom-independent */
+/** X, Y points in the drawing model, zoom-independent. */
 export type Point = [number, number] & { _marker?: never }
 
-/** X, Y points as the Canvas DOM element sees them, unaware of the app's internal zoom */
+/**
+ * X, Y points as the Canvas DOM element sees them, unaware of the app's internal zoom.
+ * The marker is not actually there at runtime, it is only defined as such for compile-time checking,
+ * to make `CanvasPoint` and `Point` structurally incompatible, enforcing the explicit conversions.
+ */
 export type CanvasPoint = [number, number] & { _marker: 'Canvas' }
 
 export type ZoomState = {
@@ -16,7 +20,7 @@ export type ZoomState = {
     /** offset from zooming such that top-left corner would be at [0, 0] */
     offset: Point
 }
-export const initialZoom: Readonly<ZoomState> = { level: 1, offset: [0, 0] }
+export const initialZoom: Readonly<ZoomState> = Object.freeze({ level: 1, offset: [0, 0] as Point })
 
 export class Stroke {
     constructor(startPoint: Point) {
@@ -30,6 +34,8 @@ export default class Drawing {
     strokes: Stroke[] = []
     eraseStroke: Stroke|undefined
     erasing = false
+    panning = false
+    panAnchor: CanvasPoint = [0, 0] as CanvasPoint // TODO: organize all these variables, remove possible states that don't make sense
     isPenDown = false
     underPointer: CanvasPoint = [0, 0] as CanvasPoint
 
@@ -63,7 +69,9 @@ export default class Drawing {
         penDown: Observable<PenUpDown>,
         movements: Observable<CanvasPoint>,
         eraseMode: Observable<boolean>,
-        zoomCommand: Observable<ZoomCommand>
+        panMode: Observable<boolean>,
+        zoomCommand: Observable<ZoomCommand>,
+        panCommand: Observable<PanCommand>
     ) {
         penDown.subscribe(this.#penUpDown.bind(this))
         movements.subscribe(this.#movement.bind(this))
@@ -79,7 +87,15 @@ export default class Drawing {
             }
         })
 
+        panMode.subscribe(panning => {
+            this.panning = panning
+            if (this.panning === false) {
+                this.isPenDown = false
+            }
+        })
+
         zoomCommand.subscribe(this.#zoomCommand.bind(this))
+        panCommand.subscribe(this.#panCommand.bind(this))
     }
 
     clear() {
@@ -94,8 +110,12 @@ export default class Drawing {
     #penUpDown(e: PenUpDown) {
         const point = this.#toModel(e.canvasPoint)
         // TODO: make all this code with all the state changes (including in mode switches) and shit nicer and readable in one place
+        // maybe instead of individual variables "panning", "erasing" etc., just have one "pen move action" variable that makes
+        // the operations mutually exclusive
         if (e.isDown) {
-            if (this.erasing) {
+            if (this.panning) {
+                this.panAnchor = e.canvasPoint
+            } else if (this.erasing) {
                 this.eraseStroke = { points: [ point ] }
                 this.eraseStrokeStart.next(point)
             } else {
@@ -105,7 +125,7 @@ export default class Drawing {
             if (this.erasing) {
                 this.eraseStrokeEnd.next(point)
                 this.eraseStroke = undefined
-            } else {
+            } else if (!this.panning) {
                 const stroke = this.#currentStroke()
                 if (stroke !== undefined) {
                     this.strokeEnd.next(stroke)
@@ -134,6 +154,10 @@ export default class Drawing {
         this.underPointer = canvasPoint
         if (this.erasing && this.isPenDown) {
             return this.#erasingMovement(canvasPoint)
+        }
+
+        if (this.panning && this.isPenDown) {
+            return this.#panningMovement(canvasPoint)
         }
 
         const stroke = this.#currentStroke()
@@ -189,19 +213,51 @@ export default class Drawing {
         }
     }
 
+    #panningMovement(canvasPoint: CanvasPoint) {
+        // TODO: decide which kind of points will be used for offsets with good reasoning
+        const existingZoom = this.zoomState.value
+        const canvasDiff = [
+            (canvasPoint[0] - this.panAnchor[0]),
+            (canvasPoint[1] - this.panAnchor[1])
+        ] as Point
+        this.zoomState.next({ level: existingZoom.level, offset: pointPlus(existingZoom.offset, canvasDiff) })
+        this.panAnchor = canvasPoint
+    }
+
     #zoomCommand(command: ZoomCommand) {
+        if (command === 'reset') {
+            return this.zoomState.next(initialZoom)
+        }
+
         const existing = this.zoomState.value
-        if (command === 'in') {
-            this.zoomState.next({ level: existing.level + 0.05, offset: existing.offset })
-        } else if (command === 'out') {
-            this.zoomState.next({ level: existing.level - 0.05, offset: existing.offset})
-        } else if (command === 'reset') {
-            this.zoomState.next(initialZoom)
+        const step = 0.05 // TODO: acceleration
+        const newLevel = existing.level + zoomRelativeLevel(command, step)
+        const newOffset = newZoomPanOffset(existing, newLevel, this.underPointer)
+        this.zoomState.next({ level: newLevel, offset: newOffset })
+        
+        function zoomRelativeLevel(command: Exclude<ZoomCommand, 'reset'>, step: number) {
+            switch (command) {
+                case 'in': return step
+                case 'out': return -step
+                default: return 0 // TODO: log error
+            }
         }
     }
 
-    #toCanvas(point: Point) {
-        return modelToCanvas(point, this.zoomState.value)
+    #panCommand(command: PanCommand) {
+        const existing = this.zoomState.value
+        const step = 10
+        this.zoomState.next({ level: existing.level, offset: pointPlus(existing.offset, zoomRelativeOffset(command.direction, step))})
+
+        function zoomRelativeOffset(direction: PanCommand["direction"], step: number): Point {
+            switch (direction) {
+                case 'left': return [-step, 0]
+                case 'right': return [step, 0]
+                case 'up': return [0, -step]
+                case 'down': return [0, step]
+                default: return [0, 0] // TODO: log error
+            }
+        }
     }
 
     #toModel(canvasPoint: CanvasPoint) {
@@ -236,5 +292,21 @@ export function canvasToModel(canvasPoint: CanvasPoint, zoom: ZoomState): Point 
     return [
         (canvasPoint[0] - zoom.offset[0]) / zoom.level,
         (canvasPoint[1] - zoom.offset[1]) / zoom.level
+    ]
+}
+
+export function pointPlus(a: Point, b: Point): Point {
+    return [a[0] + b[0], a[1] + b[1]]
+}
+
+/**
+ * When zooming in/out with a particular point under the pointer, the goal is to adjust the pan offset
+ * so that after the zoom, the same point is still under the pointer
+ */
+export function newZoomPanOffset(previousState: ZoomState, newZoomLevel: number, underPointer: CanvasPoint): Point {
+    const modelPoint = canvasToModel(underPointer, previousState)
+    return [
+        underPointer[0] - modelPoint[0] * newZoomLevel,
+        underPointer[1] - modelPoint[1] * newZoomLevel
     ]
 }

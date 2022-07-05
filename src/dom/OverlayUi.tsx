@@ -122,7 +122,7 @@ function Overlay(props: {
             }
         } else if (typeof (raw as any).level === 'number') {
             const zoom = raw as ZoomState
-            return <>zoom {Math.floor(zoom.level * 100) / 100} @ {JSON.stringify(zoom.offset)}</>
+            return <>zoom {twoDecimals(zoom.level)} @ {JSON.stringify(twoDecimals(zoom.offset))}</>
         }
         return <>unsupported raw event</>
     }
@@ -143,7 +143,7 @@ function StatusBox(props: {
         <div>Last stroke points: {props.lastStrokePoints}</div>
         <div>Erase mode: {props.eraseMode ? 'true' : 'false'}</div>
         <div>Pan mode: {props.panMode ? 'true' : 'false'}</div>
-        <div>Zoom: {Math.floor(props.zoomState.level * 100) / 100} at {JSON.stringify(props.zoomState.offset)}</div>
+        <div>Zoom: {twoDecimals(props.zoomState.level)} at {JSON.stringify(twoDecimals(props.zoomState.offset))}</div>
     </div>
 }
 
@@ -180,4 +180,13 @@ function cornerStyle(corner: Corner, offset: string = '2em') {
     const horizontal = (corner === Corner.TopLeft || corner === Corner.BottomLeft) ?
         { left: offset } : { right: offset }
     return { position: 'absolute', ...horizontal, ...vertical }
+}
+
+function twoDecimals<T extends number|number[]>(n: T): T {
+    if (Array.isArray(n)) {
+        return n.map(num => twoDecimals(num)) as T
+    } else if (typeof n === 'number') {
+        return Math.floor(n * 100) / 100 as T
+    }
+    throw new Error("twoDecimals: illegal argument type")
 }

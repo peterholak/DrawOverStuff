@@ -5,6 +5,7 @@ import { KeyDownState } from "../dom/KeyboardHandler"
 export type EraseStyle = 'switch'|'hold'
 
 export type ZoomCommand = 'in'|'out'|'reset'
+export type PanCommand = { direction: 'left'|'right'|'up'|'down', max?: boolean }
 
 export default class Modes {
     readonly eraseMode = new BehaviorSubject(false)
@@ -12,6 +13,7 @@ export default class Modes {
     // TODO: not sure if this is the best place for this, or maybe just rename this class?
     // TODO: maybe organize state better in general
     readonly zoomCommand = new Subject<ZoomCommand>()
+    readonly panCommand = new Subject<PanCommand>()
 
     constructor(
         private eraseStyle: EraseStyle,
@@ -38,6 +40,18 @@ export default class Modes {
             filter(key => key.isDown && Object.keys(zoomKeys).includes(key.code))
         ).subscribe(key => {
             this.zoomCommand.next(zoomKeys[key.code])
+        })
+
+        const panKeys: {[code: string]: PanCommand["direction"]} = {
+            ArrowUp: 'up',
+            ArrowDown: 'down',
+            ArrowLeft: 'left',
+            ArrowRight: 'right'
+        }
+        this.keyDownStates.pipe(
+            filter(key => key.isDown && Object.keys(panKeys).includes(key.code))
+        ).subscribe(key => {
+            this.panCommand.next({ direction: panKeys[key.code] })
         })
     }
 }
