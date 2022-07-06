@@ -1,12 +1,16 @@
 import Drawing, { initialZoom, ZoomState } from "../data/Drawing"
 import { JSX, render } from 'preact'
 import { useEffect, useReducer, useState } from 'preact/hooks'
-import { CanvasRawEvent } from "./CanvasDom"
-import { merge, Observable } from "rxjs"
-import { KeyboardRawEvent } from "./KeyboardHandler"
+import { CanvasRawEvent } from "../dom/CanvasDom"
+import { last, merge, Observable } from "rxjs"
+import { KeyboardRawEvent } from "../dom/KeyboardHandler"
 import Modes from "../data/Modes"
+import { Router, Route, route } from 'preact-router'
+import { createBrowserHistory, createHashHistory, createMemoryHistory } from "history"
+import Options from "./Options"
 
 export enum Corner { TopLeft, TopRight, BottomLeft, BottomRight }
+export type RepeatedString = [string, number]
 
 export default class OverlayUi {
 
@@ -27,14 +31,25 @@ export default class OverlayUi {
         this.overlay.style.width = '100%'
         this.overlay.style.height = '100%'
         this.overlay.style.pointerEvents = 'none'
+        this.overlay.style.display = 'flex'
 
-        render(<Overlay
-            drawing={drawing}
-            modes={modes}
-            rawPointerEvents={rawPointerEvents}
-            rawKeyboardEvents={rawKeyboardEvents}
-            debugEvents={debugEvents}
-            />, this.overlay)
+        const usedHistory = window.location.protocol === 'file:' ? createHashHistory() : createBrowserHistory()
+
+        render(
+            <>
+                <Overlay
+                    drawing={drawing}
+                    modes={modes}
+                    rawPointerEvents={rawPointerEvents}
+                    rawKeyboardEvents={rawKeyboardEvents}
+                    debugEvents={debugEvents}
+                    />
+                <Router history={usedHistory as any}>
+                    <Route path="/options/:page?" component={(p: any) => <Options page={p.page} />} />
+                </Router>
+            </>,
+            this.overlay
+        )
     }
 }
 
@@ -53,12 +68,17 @@ function Overlay(props: {
     const [panMode, setPanMode] = useState(false)
     const [noMoves, setNoMoves] = useState(true)
     const [zoomState, setZoomState] = useState(initialZoom)
-    const [rawEvents, addRawEvent] = useReducer<Array<string|JSX.Element>, CanvasRawEvent|KeyboardRawEvent|string>((acc, e) => {
+    const [rawEvents, addRawEvent] = useReducer<Array<RepeatedString|JSX.Element>, CanvasRawEvent|KeyboardRawEvent|string>((acc, e) => {
         if (noMoves && typeof e !== 'string' && e.eventName === 'pointermove') {
             return acc
         }
 
-        const formatted = (typeof e === 'string' ? e : formatRawEvent(e))
+        const lastItem = acc[acc.length - 1]
+        if (typeof e === 'string' && Array.isArray(lastItem) && lastItem[0] === e) {
+            return [...acc.slice(0, -1), [e, lastItem[1] + 1]]
+        }
+
+        const formatted = (typeof e === 'string' ? [e, 1] as RepeatedString : formatRawEvent(e))
 
         const events = [...acc, formatted]
         if (events.length > (props.maxEventsOnScreen ?? 10)) {
@@ -149,11 +169,12 @@ function StatusBox(props: {
 
 function ControlBox(props: { corner: Corner, onClear?: () => void }) {
     return <div style={cornerStyle(props.corner)}>
-        <button style={{ pointerEvents: 'auto' }} onClick={props.onClear}>Clear</button>
+        <button style={{ pointerEvents: 'auto' }} onClick={props.onClear}>Clear</button>{' '}
+        <button style={{ pointerEvents: 'auto' }} onClick={() => window.location.href = path('/options')}>Options</button>
     </div>
 }
 
-function EventLogBox(props: { corner: Corner, events: Array<string|JSX.Element>, noMovesRequested: (noMoves: boolean) => void }) {
+function EventLogBox(props: { corner: Corner, events: Array<RepeatedString|JSX.Element>, noMovesRequested: (noMoves: boolean) => void }) {
     const [noMoves, setNoMoves] = useState(true)
 
     const outputLines = [
@@ -164,7 +185,13 @@ function EventLogBox(props: { corner: Corner, events: Array<string|JSX.Element>,
                 no moves
             </label>
         </div>,
-        ...props.events
+        ...props.events.map(e => {
+            if (Array.isArray(e)) {
+                return <>{e[0]}{e[1] > 1 ? <span style={{display: 'inline-block', marginLeft: '0.5rem', background: '#acf', padding: '0 0.3rem', borderRadius: '7px'}}>{e[1]}x</span> : undefined}</>
+            } else {
+                return e
+            }
+        })
     ]
     if (props.corner === Corner.BottomLeft || props.corner === Corner.BottomRight) {
         outputLines.reverse()
@@ -189,4 +216,13 @@ function twoDecimals<T extends number|number[]>(n: T): T {
         return Math.floor(n * 100) / 100 as T
     }
     throw new Error("twoDecimals: illegal argument type")
+}
+
+export function path(absolute: string) {
+    const withLeadingSlash = absolute[0] === '/' ? absolute : `/${absolute}`
+    if (window.location.protocol === 'file:') {
+        return `#${withLeadingSlash}`
+    } else {
+        return withLeadingSlash
+    }
 }

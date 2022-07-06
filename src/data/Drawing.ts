@@ -21,6 +21,7 @@ export type ZoomState = {
     offset: Point
 }
 export const initialZoom: Readonly<ZoomState> = Object.freeze({ level: 1, offset: [0, 0] as Point })
+export const zoomLevels = Object.freeze([0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 5, 7.5, 10])
 
 export class Stroke {
     constructor(startPoint: Point) {
@@ -230,16 +231,15 @@ export default class Drawing {
         }
 
         const existing = this.zoomState.value
-        const step = 0.05 // TODO: acceleration
-        const newLevel = existing.level + zoomRelativeLevel(command, step)
+        const newLevel = newZoomLevel(command, existing.level)
         const newOffset = newZoomPanOffset(existing, newLevel, this.underPointer)
         this.zoomState.next({ level: newLevel, offset: newOffset })
         
-        function zoomRelativeLevel(command: Exclude<ZoomCommand, 'reset'>, step: number) {
+        function newZoomLevel(command: Exclude<ZoomCommand, 'reset'>, current: number) {
             switch (command) {
-                case 'in': return step
-                case 'out': return -step
-                default: return 0 // TODO: log error
+                case 'in': return zoomLevels.find(level => level > current) ?? zoomLevels[zoomLevels.length - 1]
+                case 'out': return reverseFind(zoomLevels, level => level < current) ?? zoomLevels[0]
+                default: return 1 // TODO: log error
             }
         }
     }
@@ -309,4 +309,13 @@ export function newZoomPanOffset(previousState: ZoomState, newZoomLevel: number,
         underPointer[0] - modelPoint[0] * newZoomLevel,
         underPointer[1] - modelPoint[1] * newZoomLevel
     ]
+}
+
+export function reverseFind<T>(array: ReadonlyArray<T>, predicate: (item: T) => boolean): T|undefined {
+    for (let i=array.length - 1; i>=0; i--) {
+        if (predicate(array[i])) {
+            return array[i]
+        }
+    }
+    return undefined
 }

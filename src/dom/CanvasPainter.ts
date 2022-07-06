@@ -1,10 +1,12 @@
-import { Observable } from "rxjs"
-import Drawing, { CanvasPoint, canvasToModel, initialZoom, modelToCanvas, Point, Stroke, ZoomState } from "../data/Drawing"
+import { Observable, Subject } from "rxjs"
+import Drawing, { CanvasPoint, initialZoom, modelToCanvas, Point, Stroke, ZoomState } from "../data/Drawing"
 
 export default class CanvasPainter {
 
     #size = { width: 0, height: 0 }
     #zoom: ZoomState = { ...initialZoom }
+
+    readonly debugEvents = new Subject<string>()
 
     constructor(
         private context: CanvasRenderingContext2D,
@@ -19,7 +21,8 @@ export default class CanvasPainter {
         this.#registerZoom()
     }
 
-    redraw(strokes: Stroke[] = this.drawing.strokes) {
+    redraw(reason: string = '', strokes: Stroke[] = this.drawing.strokes) {
+        this.debugEvents.next(`redraw (reason=${reason})`)
         this.context.strokeStyle = '#000'
         this.context.lineWidth = 1
         this.#clear()
@@ -34,26 +37,28 @@ export default class CanvasPainter {
                     this.#moveTo(pt)
                 } else {
                     this.#lineTo(pt)
-                    // doing this after every point makes it look exactly like when
-                    // dragging with a mouse, in the future this should use brushes and stuff though,
-                    // not just plain canvas line
-                    this.context.stroke()
                 }
             })
+            this.context.stroke()
         })
     }
 
     #registerLineDrawing() {
+        let previousPoint: CanvasPoint = [0, 0] as CanvasPoint
         this.drawing.strokeStart.subscribe(s => {
             this.context.beginPath()
             this.context.strokeStyle = '#000'
             this.context.lineWidth = 1
-            this.#moveTo(this.#toCanvas(s.points[0]))
+            previousPoint = this.#toCanvas(s.points[0])
         })
 
         this.drawing.strokePoint.subscribe(pt => {
-            this.#lineTo(this.#toCanvas(pt))
+            this.context.beginPath()
+            const currentPoint = this.#toCanvas(pt)
+            this.#moveTo(previousPoint)
+            this.#lineTo(currentPoint)
             this.context.stroke()
+            previousPoint = currentPoint
         })
 
         this.drawing.strokeEnd.subscribe(s => {
@@ -62,27 +67,32 @@ export default class CanvasPainter {
     }
 
     #registerEraseStrokeDrawing() {
+        let previousPoint: CanvasPoint = [0, 0] as CanvasPoint
         this.drawing.eraseStrokeStart.subscribe(pt => {
             this.context.beginPath()
-            this.#moveTo(this.#toCanvas(pt))
+            previousPoint = this.#toCanvas(pt)
         })
 
         this.drawing.eraseStrokePoint.subscribe(pt => {
-            this.#lineTo(this.#toCanvas(pt))
+            this.context.beginPath()
+            const currentPoint = this.#toCanvas(pt)
+            this.#moveTo(previousPoint)
+            this.#lineTo(currentPoint)
             this.context.strokeStyle = '#eee'
             this.context.lineWidth = 1
             this.context.stroke()
+            previousPoint = currentPoint
         })
 
         this.drawing.eraseStrokeEnd.subscribe(s => {
             // get rid of the erase stroke which is just an indicator, not part of the drawing
-            this.redraw()
+            this.redraw('erase stroke end')
         })
     }
 
     #registerErase() {
         this.drawing.strokesErased.subscribe(() => {
-            this.redraw()
+            this.redraw('strokes erased')
             this.context.beginPath()
         })
     }
@@ -100,14 +110,14 @@ export default class CanvasPainter {
 
     #registerResize() {
         this.size.subscribe(() => {
-            this.redraw()
+            this.redraw('resize')
         })
     }
 
     #registerZoom() {
         this.drawing.zoomState.subscribe(z => {
             this.#zoom = z
-            this.redraw()
+            this.redraw('zoom/pan')
         })
     }
 
