@@ -17,5 +17,8 @@ function start() {
     const overlay = new OverlayUi(drawing, modes, canvas.rawEvents, undefined, merge(drawing.debugEvents, painter.debugEvents))
 
     document.body.appendChild(canvas.canvas)
+    if (canvas.cursorDiv !== undefined) {
+        document.body.appendChild(canvas.cursorDiv)
+    }
     document.body.appendChild(overlay.overlay)
 }

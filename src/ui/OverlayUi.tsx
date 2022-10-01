@@ -8,6 +8,7 @@ import Modes from "../data/Modes"
 import { Router, Route, route } from 'preact-router'
 import { createBrowserHistory, createHashHistory, createMemoryHistory } from "history"
 import Options from "./Options"
+import { usedTheme } from "./theme"
 
 export enum Corner { TopLeft, TopRight, BottomLeft, BottomRight }
 export type RepeatedString = [string, number]
@@ -110,22 +111,25 @@ function Overlay(props: {
         }
     }, [])
 
-    return <>
-        <StatusBox
-            corner={Corner.BottomRight}
-            strokeCount={strokeCount}
-            pointCount={pointCount}
-            lastStrokePoints={lastStrokePoints}
-            eraseMode={eraseMode}
-            panMode={panMode}
-            zoomState={zoomState}
-        />
+    return <div style={{ color: usedTheme.textColor }}>
+        {usedTheme.showDebugInfo ?
+            <StatusBox
+                corner={Corner.BottomRight}
+                strokeCount={strokeCount}
+                pointCount={pointCount}
+                lastStrokePoints={lastStrokePoints}
+                eraseMode={eraseMode}
+                panMode={panMode}
+                zoomState={zoomState}
+            />
+            : undefined
+        }
         <ControlBox corner={Corner.TopLeft} onClear={() => props.drawing.clear()} />
-        {props.rawPointerEvents !== undefined || props.rawKeyboardEvents !== undefined ?
+        {usedTheme.showDebugInfo && (props.rawPointerEvents !== undefined || props.rawKeyboardEvents !== undefined) ?
             <EventLogBox corner={Corner.BottomLeft} events={rawEvents} noMovesRequested={setNoMoves} /> :
             undefined
         }
-    </>
+    </div>
 
     function formatRawEvent(raw: CanvasRawEvent|KeyboardRawEvent|ZoomState) {
         if ((raw as any).event !== undefined) {

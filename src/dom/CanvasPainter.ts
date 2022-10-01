@@ -1,5 +1,6 @@
 import { Observable, Subject } from "rxjs"
 import Drawing, { CanvasPoint, initialZoom, modelToCanvas, Point, Stroke, ZoomState } from "../data/Drawing"
+import { usedTheme } from "../ui/theme"
 
 export default class CanvasPainter {
 
@@ -23,7 +24,7 @@ export default class CanvasPainter {
 
     redraw(reason: string = '', strokes: Stroke[] = this.drawing.strokes) {
         this.debugEvents.next(`redraw (reason=${reason})`)
-        this.context.strokeStyle = '#000'
+        this.context.strokeStyle = usedTheme.defaultStrokeColor
         this.context.lineWidth = 1
         this.#clear()
         strokes.forEach(s => {
@@ -47,7 +48,7 @@ export default class CanvasPainter {
         let previousPoint: CanvasPoint = [0, 0] as CanvasPoint
         this.drawing.strokeStart.subscribe(s => {
             this.context.beginPath()
-            this.context.strokeStyle = '#000'
+            this.context.strokeStyle = usedTheme.defaultStrokeColor
             this.context.lineWidth = 1
             previousPoint = this.#toCanvas(s.points[0])
         })
@@ -78,7 +79,7 @@ export default class CanvasPainter {
             const currentPoint = this.#toCanvas(pt)
             this.#moveTo(previousPoint)
             this.#lineTo(currentPoint)
-            this.context.strokeStyle = '#eee'
+            this.context.strokeStyle = usedTheme.eraseStrokeColor
             this.context.lineWidth = 1
             this.context.stroke()
             previousPoint = currentPoint

@@ -1,5 +1,6 @@
 import { BehaviorSubject, ReplaySubject, Subject } from "rxjs"
 import { CanvasPoint, Point } from "../data/Drawing"
+import { usedTheme } from "../ui/theme"
 
 export type PenUpDown = {
     isDown: boolean
@@ -15,6 +16,7 @@ export type CanvasRawEvent = { eventName: PointerEventList, event: PointerEvent 
 
 export default class CanvasDom {
     canvas: HTMLCanvasElement
+    cursorDiv: HTMLDivElement|undefined
     readonly penDown = new BehaviorSubject<PenUpDown>({ isDown: false, canvasPoint: [0, 0] as CanvasPoint })
     readonly movements = new Subject<CanvasPoint>()
     readonly size = new ReplaySubject<{ width: number, height: number }>(1)
@@ -36,6 +38,11 @@ export default class CanvasDom {
     constructor() {
         this.canvas = document.createElement('canvas')
         this.canvas.style.flex = '1'
+        this.canvas.style.background = usedTheme.background
+        if (usedTheme.extraCursor) {
+            this.cursorDiv = this.#createCursorDiv()
+            this.canvas.appendChild(this.cursorDiv)
+        }
         this.#attachResizeHandlers()
         this.#attachPointerHandlers()
         this.#attachRawEvents()
@@ -73,6 +80,11 @@ export default class CanvasDom {
             this.canvas.style.cursor = 'default'
         }
 
+        if (this.cursorDiv !== undefined) {
+            this.cursorDiv.style.left = `${e.x - this.cursorDiv.clientWidth / 2}px`
+            this.cursorDiv.style.top = `${e.y - this.cursorDiv.clientHeight / 2}px`
+        }
+
         this.movements.next([e.x, e.y] as CanvasPoint)
     }
 
@@ -82,5 +94,18 @@ export default class CanvasDom {
 
     #onPointerUp(e: PointerEvent) {
         this.penDown.next({ isDown: false, canvasPoint: [e.x, e.y] as CanvasPoint })
+    }
+
+    #createCursorDiv() {
+        const div = document.createElement('div')
+        div.style.position = 'absolute'
+        div.style.boxSizing = 'border-box'
+        div.style.width = '2px'
+        div.style.height = '2px'
+        div.style.margin = '0'
+        div.style.padding = '0'
+        div.style.background = usedTheme.textColor
+        div.style.pointerEvents = 'none'
+        return div
     }
 }
