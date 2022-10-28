@@ -75,7 +75,7 @@ export default class CanvasDom {
     #onPointerMove(e: PointerEvent) {
         // TODO: only on pointerover?
         if (e.pointerType === 'pen') {
-            this.canvas.style.cursor = 'crosshair'
+            this.canvas.style.cursor = 'none'
         } else {
             this.canvas.style.cursor = 'default'
         }

@@ -9,6 +9,7 @@ import { Router, Route, route } from 'preact-router'
 import { createBrowserHistory, createHashHistory, createMemoryHistory } from "history"
 import Options from "./Options"
 import { usedTheme } from "./theme"
+import PageList from "./PageList"
 
 export enum Corner { TopLeft, TopRight, BottomLeft, BottomRight }
 export type RepeatedString = [string, number]
@@ -47,6 +48,7 @@ export default class OverlayUi {
                     />
                 <Router history={usedHistory as any}>
                     <Route path="/options/:page?" component={(p: any) => <Options page={p.page} />} />
+                    <Route path="/pages" component={PageList} />
                 </Router>
             </>,
             this.overlay
@@ -174,7 +176,8 @@ function StatusBox(props: {
 function ControlBox(props: { corner: Corner, onClear?: () => void }) {
     return <div style={cornerStyle(props.corner)}>
         <button style={{ pointerEvents: 'auto' }} onClick={props.onClear}>Clear</button>{' '}
-        <button style={{ pointerEvents: 'auto' }} onClick={() => window.location.href = path('/options')}>Options</button>
+        <button style={{ pointerEvents: 'auto' }} onClick={() => window.location.href = path('/options')}>Options</button>{' '}
+        <button style={{ pointerEvents: 'auto '}} onClick={() => window.location.href = path('/pages')}>Pages</button>
     </div>
 }
 

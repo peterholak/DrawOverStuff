@@ -13,7 +13,7 @@ export const darkTheme = {
     eraseStrokeColor: '#333',
     textColor: '#fff',
     extraCursor: true,
-    showDebugInfo: true
+    showDebugInfo: false
 }
 
 export const usedTheme = darkTheme
