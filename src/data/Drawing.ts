@@ -31,6 +31,11 @@ export class Stroke {
     points: Array<Point> = []
 }
 
+export type SerializedDrawing = {
+    strokes: Stroke[]
+    zoomState: ZoomState
+}
+
 export default class Drawing {
     strokes: Stroke[] = []
     eraseStroke: Stroke|undefined
@@ -50,12 +55,14 @@ export default class Drawing {
     readonly strokesErased = new Subject<void>()
 
     readonly clears = new Subject<void>()
+    readonly restores = new Subject<{ kind: 'restore' }>()
 
     readonly zoomState = new BehaviorSubject<ZoomState>(initialZoom)
 
     readonly debugEvents = new Subject<string>()
 
-    readonly #strokeChanges = merge(this.clears, this.strokeEnd, this.strokesErased)
+    readonly documentChanges = merge(this.clears, this.strokeEnd, this.strokesErased, this.zoomState)
+    readonly #strokeChanges = merge(this.clears, this.strokeEnd, this.strokesErased, this.restores)
     readonly strokeCount = this.#strokeChanges.pipe(
         map(() => this.strokes.length)
     )
@@ -65,6 +72,8 @@ export default class Drawing {
     readonly lastStrokePoints = this.#strokeChanges.pipe(
         map(() => this.strokes.length === 0 ? 0 : this.strokes[this.strokes.length - 1].points.length)
     )
+
+    restoreInProgress = false
 
     constructor(
         penDown: Observable<PenUpDown>,
@@ -106,6 +115,24 @@ export default class Drawing {
         }
         this.strokes = []
         this.clears.next()
+    }
+
+    restore(saved: SerializedDrawing) {
+        try {
+            this.restoreInProgress = true
+            this.strokes = saved.strokes
+            this.zoomState.next(saved.zoomState)
+            this.restores.next({ kind: 'restore' })
+        } finally {
+            this.restoreInProgress = false
+        }
+    }
+
+    serialize(): SerializedDrawing {
+        return {
+            strokes: this.strokes,
+            zoomState: this.zoomState.value
+        }
     }
 
     #penUpDown(e: PenUpDown) {

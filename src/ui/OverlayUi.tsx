@@ -9,7 +9,8 @@ import { Router, Route, route } from 'preact-router'
 import { createBrowserHistory, createHashHistory, createMemoryHistory } from "history"
 import Options from "./Options"
 import { usedTheme } from "./theme"
-import PageList from "./PageList"
+import PageListUi from "./PageListUi"
+import { Pages } from "../data/Pages"
 
 export enum Corner { TopLeft, TopRight, BottomLeft, BottomRight }
 export type RepeatedString = [string, number]
@@ -21,6 +22,7 @@ export default class OverlayUi {
 
     constructor(
         drawing: Parameters<typeof Overlay>[0]["drawing"],
+        pages: Parameters<typeof Overlay>[0]["pages"],
         modes: Parameters<typeof Overlay>[0]["modes"],
         rawPointerEvents?: Observable<CanvasRawEvent>,
         rawKeyboardEvents?: Observable<KeyboardRawEvent>,
@@ -41,6 +43,7 @@ export default class OverlayUi {
             <>
                 <Overlay
                     drawing={drawing}
+                    pages={pages}
                     modes={modes}
                     rawPointerEvents={rawPointerEvents}
                     rawKeyboardEvents={rawKeyboardEvents}
@@ -48,7 +51,7 @@ export default class OverlayUi {
                     />
                 <Router history={usedHistory as any}>
                     <Route path="/options/:page?" component={(p: any) => <Options page={p.page} />} />
-                    <Route path="/pages" component={PageList} />
+                    <Route path="/pages" component={() => <PageListUi pages={pages} />} />
                 </Router>
             </>,
             this.overlay
@@ -58,6 +61,7 @@ export default class OverlayUi {
 
 function Overlay(props: {
     drawing: Pick<Drawing, 'strokeCount'|'pointCount'|'lastStrokePoints'|'clear'|'zoomState'>,
+    pages: Pages,
     modes: Pick<Modes, 'eraseMode'|'panMode'>,
     rawPointerEvents?: Observable<CanvasRawEvent>,
     rawKeyboardEvents?: Observable<KeyboardRawEvent>,
