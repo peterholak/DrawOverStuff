@@ -2,6 +2,8 @@ const path = require('path')
 // const CopyWebpackPlugin = require('copy-webpack-plugin')
 const HtmlWebpackPlugin = require("html-webpack-plugin")
 
+const isDevelopment = process.env.NODE_ENV !== 'production'
+
 const config = {
     mode: 'development',
     entry: {
@@ -9,7 +11,21 @@ const config = {
     },
     output: {
         path: path.resolve(__dirname, 'dist'),
-        filename: '[name].js'
+        filename: '[name].js',
+        publicPath: isDevelopment ? '/' : '',
+        clean: true
+    },
+    devServer: {
+        static: {
+            directory: path.join(__dirname, 'dist'),
+        },
+        historyApiFallback: true,
+        hot: true,
+        open: true,
+        port: 3000,
+        devMiddleware: {
+            publicPath: '/'
+        }
     },
     resolve: {
         extensions: ['.ts', '.tsx', '.js'],
@@ -26,13 +42,16 @@ const config = {
         //         {from: 'src/index.html', to: '.'}
         //     ]
         // }),
-        new HtmlWebpackPlugin({ template: 'src/index.html' })
+        new HtmlWebpackPlugin({
+            template: 'src/index.html',
+            scriptLoading: 'defer'
+        })
     ],
     devtool: 'source-map',
     optimization: {
-        splitChunks: {
+        splitChunks: isDevelopment ? {
             chunks: 'all'
-        }
+        } : false
     },
     // Suppress some harmless warnings for a 3rd party library (the code already handles the missing modules properly).
     stats: {

@@ -1,5 +1,6 @@
 import { BehaviorSubject, filter, Observable, Subject } from "rxjs"
 import { KeyDownState } from "../dom/KeyboardHandler"
+import { playLayer1Tone, playLayer2Tone } from "../audio/Tones"
 
 // switch = button switches between pen/eraser, hold = erasing while button is pressed down
 export type EraseStyle = 'switch'|'hold'
@@ -10,8 +11,10 @@ export type PanCommand = { direction: 'left'|'right'|'up'|'down', max?: boolean 
 export default class Modes {
     readonly eraseMode = new BehaviorSubject(false)
     readonly panMode = new BehaviorSubject(false)
-    // TODO: not sure if this is the best place for this, or maybe just rename this class?
-    // TODO: maybe organize state better in general
+    readonly cursorVisible = new BehaviorSubject(false)
+    readonly layer2Active = new BehaviorSubject(false)
+    readonly nextPage = new Subject<void>()
+    readonly previousPage = new Subject<void>()
     readonly zoomCommand = new Subject<ZoomCommand>()
     readonly panCommand = new Subject<PanCommand>()
 
@@ -29,6 +32,40 @@ export default class Modes {
 
         this.keyDownStates.pipe(filter(key => key.code === 'KeyA')).subscribe(a => {
             this.panMode.next(a.isDown)
+        })
+
+        // Toggle between layers with L key
+        this.keyDownStates.pipe(
+            filter(key => key.code === 'KeyL' && key.isDown)
+        ).subscribe(() => {
+            const newLayer2State = !this.layer2Active.value;
+            this.layer2Active.next(newLayer2State);
+            // Play appropriate tone for the layer we switched to
+            if (newLayer2State) {
+                playLayer2Tone();
+            } else {
+                playLayer1Tone();
+            }
+        })
+
+        // Toggle cursor visibility with H key
+        this.keyDownStates.pipe(
+            filter(key => key.code === 'KeyH' && key.isDown)
+        ).subscribe(() => {
+            this.cursorVisible.next(!this.cursorVisible.value)
+        })
+
+        // Page navigation with PageUp/PageDown
+        this.keyDownStates.pipe(
+            filter(key => key.code === 'PageUp' && key.isDown)
+        ).subscribe(() => {
+            this.previousPage.next()
+        })
+
+        this.keyDownStates.pipe(
+            filter(key => key.code === 'PageDown' && key.isDown)
+        ).subscribe(() => {
+            this.nextPage.next()
         })
 
         const zoomKeys: {[code: string]: ZoomCommand} = {

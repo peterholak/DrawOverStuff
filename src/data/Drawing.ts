@@ -21,7 +21,13 @@ export type ZoomState = {
     offset: Point
 }
 export const initialZoom: Readonly<ZoomState> = Object.freeze({ level: 1, offset: [0, 0] as Point })
-export const zoomLevels = Object.freeze([0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 5, 7.5, 10])
+export const zoomLevels = Object.freeze([
+    0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5,  // Very fine control at small zoom
+    0.6, 0.7, 0.8, 0.9, 1,                            // Approaching normal size
+    1.1, 1.2, 1.3, 1.4, 1.5,                          // Small zoom in steps
+    1.75, 2, 2.25, 2.5, 2.75, 3,                      // Medium zoom in steps
+    3.5, 4, 4.5, 5                                    // Large zoom in steps
+])
 
 export class Stroke {
     constructor(startPoint: Point) {
@@ -32,18 +38,21 @@ export class Stroke {
 }
 
 export type SerializedDrawing = {
-    strokes: Stroke[]
+    layer1Strokes: Stroke[]
+    layer2Strokes: Stroke[]
     zoomState: ZoomState
 }
 
 export default class Drawing {
-    strokes: Stroke[] = []
+    layer1Strokes: Stroke[] = []
+    layer2Strokes: Stroke[] = []
     eraseStroke: Stroke|undefined
     erasing = false
     panning = false
-    panAnchor: CanvasPoint = [0, 0] as CanvasPoint // TODO: organize all these variables, remove possible states that don't make sense
+    panAnchor: CanvasPoint = [0, 0] as CanvasPoint
     isPenDown = false
     underPointer: CanvasPoint = [0, 0] as CanvasPoint
+    isLayer2Active = false
 
     readonly strokeStart = new Subject<Readonly<Stroke>>()
     readonly strokeEnd = new Subject<Readonly<Stroke>>()
@@ -108,19 +117,31 @@ export default class Drawing {
         panCommand.subscribe(this.#panCommand.bind(this))
     }
 
+    get strokes(): Stroke[] {
+        return [...this.layer1Strokes, ...this.layer2Strokes]
+    }
+
+    set strokes(value: Stroke[]) {
+        // This is only used by clear() and restore()
+        this.layer1Strokes = value
+        this.layer2Strokes = []
+    }
+
     clear() {
         const existingStroke = this.#currentStroke()
         if (existingStroke !== undefined) {
             this.strokeEnd.next(existingStroke)
         }
-        this.strokes = []
+        this.layer1Strokes = []
+        this.layer2Strokes = []
         this.clears.next()
     }
 
     restore(saved: SerializedDrawing) {
         try {
             this.restoreInProgress = true
-            this.strokes = saved.strokes
+            this.layer1Strokes = saved.layer1Strokes || []
+            this.layer2Strokes = saved.layer2Strokes || []
             this.zoomState.next(saved.zoomState)
             this.restores.next({ kind: 'restore' })
         } finally {
@@ -130,7 +151,8 @@ export default class Drawing {
 
     serialize(): SerializedDrawing {
         return {
-            strokes: this.strokes,
+            layer1Strokes: this.layer1Strokes,
+            layer2Strokes: this.layer2Strokes,
             zoomState: this.zoomState.value
         }
     }
@@ -164,16 +186,25 @@ export default class Drawing {
     }
 
     #currentStroke() {
-        if (!this.isPenDown || this.erasing || this.strokes.length === undefined) {
+        if (!this.isPenDown || this.erasing) {
             return undefined
         }
 
-        return this.strokes[this.strokes.length - 1]
+        const activeStrokes = this.isLayer2Active ? this.layer2Strokes : this.layer1Strokes
+        if (!activeStrokes.length) {
+            return undefined
+        }
+
+        return activeStrokes[activeStrokes.length - 1]
     }
 
     #nextStroke(startPoint: Point) {
         const stroke = new Stroke(startPoint)
-        this.strokes.push(stroke)
+        if (this.isLayer2Active) {
+            this.layer2Strokes.push(stroke)
+        } else {
+            this.layer1Strokes.push(stroke)
+        }
         this.strokeStart.next(stroke)
     }
 
@@ -199,15 +230,12 @@ export default class Drawing {
     #erasingMovement(canvasPoint: CanvasPoint) {
         const point = this.#toModel(canvasPoint)
         if (this.eraseStroke === undefined) {
-            // erase key may have been pressed during an existing stroke
-            // it will not be take into account in such a case
             return
         }
 
         this.eraseStroke.points.push(point)
         this.eraseStrokePoint.next(point)
         
-        // need at least 2 points, to check line intersecting with another line
         if (this.eraseStroke.points.length < 2) {
             return
         }
@@ -216,9 +244,9 @@ export default class Drawing {
         const pt2 = this.eraseStroke.points[this.eraseStroke.points.length - 1]
 
         const strokesToDelete: Stroke[] = []
-        // TODO: optimize obviously, divide up space and only compare with strokes' segments that cross the nearby areas, etc.
-        this.strokes.forEach(s => {
-            // TODO: way to erase single points
+        // Only erase from the active layer
+        const targetStrokes = this.isLayer2Active ? this.layer2Strokes : this.layer1Strokes
+        targetStrokes.forEach(s => {
             if (s.points.length < 2) {
                 return
             }
@@ -234,9 +262,14 @@ export default class Drawing {
             }
         })
 
-        this.strokes = this.strokes.filter(s => !strokesToDelete.includes(s))
+        if (this.isLayer2Active) {
+            this.layer2Strokes = this.layer2Strokes.filter(s => !strokesToDelete.includes(s))
+        } else {
+            this.layer1Strokes = this.layer1Strokes.filter(s => !strokesToDelete.includes(s))
+        }
+
         if (strokesToDelete.length > 0) {
-            this.debugEvents.next(`erased ${strokesToDelete.length} strokes`)
+            this.debugEvents.next(`erased ${strokesToDelete.length} strokes from layer ${this.isLayer2Active ? 2 : 1}`)
             this.strokesErased.next()
         }
     }

@@ -38,12 +38,72 @@ export class Pages {
         this.#current.next(page)
     }
 
-    goToNextActivePage() {
+    updatePage(updatedPage: Page) {
+        const index = this.#pages.value.findIndex(p => p.id === updatedPage.id)
+        if (index === -1) {
+            this.errors.next(`no page has id ${updatedPage.id}`)
+            return
+        }
+        const newPages = [...this.#pages.value]
+        newPages[index] = updatedPage
+        this.#pages.next(newPages)
+        
+        // If this was the current page, update the current page reference
+        if (this.#current.value.id === updatedPage.id) {
+            this.#current.next(updatedPage)
+        }
+    }
 
+    restorePages(pages: Page[]) {
+        if (!Array.isArray(pages) || pages.length === 0) {
+            return
+        }
+        // Update titles to use first segment of UUID
+        const updatedPages = pages.map(page => ({
+            ...page,
+            title: page.id.split('-')[0]
+        }))
+        this.#pages.next(updatedPages)
+        this.#current.next(updatedPages[0])
+    }
+
+    goToNextActivePage() {
+        const currentIndex = this.#pages.value.findIndex(p => p.id === this.#current.value.id)
+        if (currentIndex === -1 || currentIndex === this.#pages.value.length - 1) {
+            return
+        }
+        this.#current.next(this.#pages.value[currentIndex + 1])
     }
 
     goToPreviousActivePage() {
+        const currentIndex = this.#pages.value.findIndex(p => p.id === this.#current.value.id)
+        if (currentIndex <= 0) {
+            return
+        }
+        this.#current.next(this.#pages.value[currentIndex - 1])
+    }
 
+    deletePage(pageId: string) {
+        const index = this.#pages.value.findIndex(p => p.id === pageId)
+        if (index === -1) {
+            this.errors.next(`no page has id ${pageId}`)
+            return
+        }
+
+        // Don't allow deleting the last page
+        if (this.#pages.value.length === 1) {
+            this.errors.next('cannot delete the last page')
+            return
+        }
+
+        const newPages = this.#pages.value.filter(p => p.id !== pageId)
+        this.#pages.next(newPages)
+
+        // If we deleted the current page, switch to the previous page (or the first page if we deleted the first one)
+        if (this.#current.value.id === pageId) {
+            const newCurrentIndex = Math.max(0, index - 1)
+            this.#current.next(newPages[newCurrentIndex])
+        }
     }
 
     current(): Readonly<Page> {
@@ -55,9 +115,10 @@ export class Pages {
     }
 
     #newPage() {
+        const id = v4();
         return {
-            id: v4(),
-            title: 'New Page',
+            id,
+            title: id.split('-')[0],  // Get first segment of UUID
             savedState: undefined,
             lastModified: new Date().getTime()
         }

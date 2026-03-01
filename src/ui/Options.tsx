@@ -1,10 +1,11 @@
 import { route } from "preact-router"
-import { useEffect, useRef } from "preact/hooks"
+import { useEffect, useRef, useState } from "preact/hooks"
 import { drawDebugCanvas } from "./DebugCanvas"
 import Dialog, { stylesHelper } from "./Dialog"
 import { path } from "./OverlayUi"
+import { currentTheme, themes, showDebugInfo } from "./theme"
 
-type OptionsPage = 'interaction'|'debug'
+export type OptionsPage = 'interaction'|'debug'|'theme'
 
 export default function Options(props: { page: OptionsPage|'' }) {
     useEffect(() => {
@@ -21,6 +22,7 @@ export default function Options(props: { page: OptionsPage|'' }) {
             <ul style={{ padding: 0, listStyle: 'none' }}>
                 <PageLink now={props.page} to={'interaction'}>Interaction</PageLink>
                 <PageLink now={props.page} to={'debug'}>Debug</PageLink>
+                <PageLink now={props.page} to={'theme'}>Theme</PageLink>
             </ul>
         </div>
         <div style={styles.page}>
@@ -32,6 +34,7 @@ export default function Options(props: { page: OptionsPage|'' }) {
         switch (page) {
             case 'debug': return <DebugPage />
             case 'interaction': return <InteractionPage />
+            case 'theme': return <ThemePage />
         }
         return undefined
     }
@@ -45,25 +48,77 @@ function InteractionPage() {
 
 function DebugPage() {
     const canvas = useRef<HTMLCanvasElement>(null)
+    const [debugVisible, setDebugVisible] = useState(showDebugInfo.value)
+
     useEffect(() => {
         if (canvas.current === null) { return }
         const [w, h] = [canvas.current.clientWidth, canvas.current.clientHeight]
         canvas.current.width = w
         canvas.current.height = h
-        //canvas.current.attributes.setNamedItem('height', canvas.current.height)
         const ctx = canvas.current.getContext('2d')!
         drawDebugCanvas(ctx, w, h)
     }, [canvas.current])
-    return <div style={{display: 'flex'}}>
-        <canvas style={{background: '#fff', flex: 0.5 }} ref={canvas}></canvas>
+
+    return <div>
+        <div style={{ marginBottom: '2rem' }}>
+            <h2>Debug Settings</h2>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <input
+                    type="checkbox"
+                    checked={debugVisible}
+                    onChange={(e: Event) => {
+                        const target = e.target as HTMLInputElement
+                        setDebugVisible(target.checked)
+                        showDebugInfo.next(target.checked)
+                    }}
+                />
+                Show debug information
+            </label>
+        </div>
+        <div style={{display: 'flex'}}>
+            <canvas style={{background: '#fff', flex: 0.5 }} ref={canvas}></canvas>
+        </div>
+    </div>
+}
+
+function ThemePage() {
+    const [selectedTheme, setSelectedTheme] = useState(currentTheme.value)
+
+    return <div>
+        <h2>Theme Settings</h2>
+        <div style={styles.themeGrid}>
+            {themes.map(theme => (
+                <div
+                    key={theme.name}
+                    style={{
+                        ...styles.themeCard,
+                        ...(theme.name === selectedTheme.name ? styles.themeCardSelected : {}),
+                        background: theme.background,
+                        color: theme.textColor,
+                        border: `2px solid ${theme.textColor}`
+                    }}
+                    onClick={() => {
+                        setSelectedTheme(theme)
+                        currentTheme.next(theme)
+                    }}
+                >
+                    <h3 style={styles.themeTitle}>{theme.name}</h3>
+                    <div style={styles.themePreview}>
+                        <div style={{ background: theme.defaultStrokeColor, width: '100%', height: '2px', margin: '4px 0' }} />
+                        <div style={{ background: theme.eraseStrokeColor, width: '100%', height: '2px', margin: '4px 0' }} />
+                    </div>
+                </div>
+            ))}
+        </div>
     </div>
 }
 
 function PageLink(props: { now: OptionsPage, to: OptionsPage, children: any }) {
+    const isActive = props.now === props.to
     return <li>
         <a
-            style={{...styles.pageLink, ...(props.now === props.to ? styles.pageLinkActive : undefined)}}
-            href={optionsPagePath(props.to)}
+            href={`/options/${props.to}`}
+            style={{ ...styles.pageLink, ...(isActive ? styles.pageLinkActive : {}) }}
         >
             {props.children}
         </a>
@@ -94,5 +149,34 @@ const styles = stylesHelper({
         padding: '1rem',
         marginBottom: '10rem',
         flex: 1
+    },
+
+    themeGrid: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+        gap: '1rem',
+        padding: '1rem'
+    },
+
+    themeCard: {
+        padding: '1rem',
+        borderRadius: '8px',
+        cursor: 'pointer',
+        transition: 'transform 0.2s ease'
+    },
+
+    themeCardSelected: {
+        boxShadow: '0 0 0 2px #000'
+    },
+
+    themeTitle: {
+        margin: '0 0 1rem 0',
+        fontSize: '1.2rem'
+    },
+
+    themePreview: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.5rem'
     }
 })
